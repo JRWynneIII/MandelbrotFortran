@@ -88,10 +88,6 @@ program Mandelbrot
         enddo  
       enddo
 
-      do i = 1, (nx*ny)
-        print*, "MSet[",i,"]: ",MSet(i)
-      enddo
-
       ! Call my C function for calc_pixel_value(nx,ny,MSet,maxiter)
 
       deallocate(MSet)
