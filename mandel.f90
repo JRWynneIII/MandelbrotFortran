@@ -1,10 +1,23 @@
-program Mandelbrot
+Module libTIFF
+  Interface 
+        Subroutine calc_pixel_value(nx,ny,MSet,maxiter) BIND (C, NAME='calc_pixel_value')
+          use iso_c_binding
+          implicit none
+          integer (c_int), value :: nx,ny,maxiter
+          integer (c_int), value :: MSet(*)
+        end Subroutine
+  end Interface
+end Module libTiff
+
+Program Mandelbrot
+      use iso_c_binding
+      use libTIFF
       implicit none
 
-      integer :: nx = 1000
-      integer :: ny = 1000
-      integer :: maxiter = 2000
-      integer,dimension(:),allocatable :: MSet
+      integer (c_int):: nx = 1000
+      integer (c_int):: ny = 1000
+      integer (c_int):: maxiter = 2000
+      integer (c_int),dimension(:),allocatable :: MSet
       integer :: xmin = -3
       integer :: ymin = -2
       integer :: xmax = 1
@@ -31,7 +44,7 @@ program Mandelbrot
       allocate(yorbit(maxiter))
 
       do iy=1,(ny-1)
-        cy = (ymin+iy*(ymax-ymin))/real((ny-1))
+        cy = ymin+iy*(ymax-ymin)/real((ny-1))
         do ix=1,(nx-1)
             iter = 0
             i = 0
@@ -43,7 +56,7 @@ program Mandelbrot
             xder = 0
             yder = 0
             dist = 0
-            cx = (xmin + ix*(xmax-xmin))/real(ny-1)
+            cx = xmin + ix*(xmax-xmin)/real(ny-1)
             do iter = 0,maxiter
               temp = x2-y2 + cx
               y = 2.0*x*y+cy
@@ -89,6 +102,7 @@ program Mandelbrot
       enddo
 
       ! Call my C function for calc_pixel_value(nx,ny,MSet,maxiter)
-
+      call calc_pixel_value(nx,ny,MSet,maxiter)
       deallocate(MSet)
-end program Mandelbrot
+end Program Mandelbrot
+

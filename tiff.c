@@ -5,19 +5,19 @@
 
 void write_tiff_bilevel(char * outputFilename, int m_width, int m_height, unsigned char m_image_data[m_width*m_height]);
 
-extern void calc_pixel_value(int nx, int ny, int coordArray[nx][ny], int maxiter)
+extern void calc_pixel_value(int nx, int ny, int coordArray[nx*ny], int maxiter)
 {
 	int pointiter = 0;
 	unsigned char *m_image_data = malloc(sizeof(unsigned char)*nx*ny);
 	int i = 0;
 	int elecount = 0;
 	int a = 0;
-	char outputname[10] = "output.tif";
+	char outputname[11] = "output.tif";
 	for (i = 0; i<ny; i++)
 	{
 		for (a = 0; a<nx; a++)
 		{
-			pointiter = coordArray[a][i];
+			pointiter = coordArray[i*nx+a];
 			if (pointiter == 1)			//COLOR HERE
 				m_image_data[elecount] = 0;
 			else 
@@ -54,6 +54,7 @@ void write_tiff_bilevel(char * outputFilename, int m_width, int m_height, unsign
 	//TIFFSetField(outputname, TIFFTAG_FILLORDER, FILLORDER_MSB2LSB);
 
 	//write info to file
+	printf("Printed tiff\n");
 	TIFFWriteEncodedStrip(outputname, 0, m_image_data, m_width*m_height);
 
 	TIFFClose(outputname);
