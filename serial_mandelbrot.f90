@@ -1,14 +1,20 @@
 program Mandelbrot
       implicit none
 
+      ! x and y resolution
       integer(kind=4) :: nx = 1000
       integer(kind=4) :: ny = 1000
+      ! Maximum number of iterations
       integer(kind=4) :: maxiter = 2000
+      ! Use a two dimensional array to hold data for the image
       integer(kind=4),dimension(:,:),allocatable :: MSet
+      ! Change maximum and minimum values of the window that the
+      ! appear in the image. Increase the values and you zoom out
+      ! decrease the values and you zoom in
       integer(kind=4) :: xmin = -2
       integer(kind=4) :: ymin = -2
-      integer(kind=4) :: xmax = 0
-      integer(kind=4) :: ymax = 0
+      integer(kind=4) :: xmax = 2
+      integer(kind=4) :: ymax = 2
       real(kind=8) :: threshold = 1
       real(kind=8) :: dist = 0
       integer(kind=4) :: ix, iy
@@ -24,13 +30,24 @@ program Mandelbrot
       logical :: flag = .false.
       integer(kind=4),parameter :: overflow = 2147483647
       real(kind=8) :: delta 
+      ! name of file to write image out to
       character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
       delta = (threshold*(xmax-xmin))/real(nx)
 
       allocate(MSet(1:nx,1:ny), xorbit(maxiter), yorbit(maxiter))
 
+      ! We use a nested loop here to effectively traverse over each part of the grid (pixel of the image)
+      ! in sequence. First, the complex values of the points are determined and then used as the basis of 
+      ! the computaion. Effectively, it will loop over each point (pixel) and according on how many iterations 
+      ! it takes for the value that the mathematical function returns on each iteration it will determine 
+      ! whether or not the point "escapes" to infinity (or an arbitrarily large number.) or not. If it takes 
+      ! few iterations to escape then it will decide that this point is NOT part of the Mandelbrot set and 
+      ! will put a 0 in that point's index in MSet. If it takes nearly all or all of the iterations to escape, 
+      ! then it will decide that the point/pixel is part of the Mandelbrot set and instead put a 1 in its place 
+      ! in MSet.
+
       do iy=1,ny
-        cy = (ymin+iy*(ymax-ymin))/real(ny)
+        cy = ymin+(iy-1)*(ymax-ymin)/real(ny-1) 
         do ix=1,nx
             iter = 0
             i = 0
@@ -42,7 +59,9 @@ program Mandelbrot
             xder = 0
             yder = 0
             dist = 0
-            cx = (xmin + ix*(xmax-xmin))/real(nx)
+            cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
+            ! This is the main loop that determins whether or not the point escapes or not. 
+            ! It breaks out of the loop when it escapes
             do iter = 0,maxiter
               temp = x2-y2 + cx
               y = 2.0*x*y+cy
@@ -51,8 +70,11 @@ program Mandelbrot
               y2 = y**2
               xorbit(iter+1) = x
               yorbit(iter+1) = y
+              ! if point escapes then break to next loop
               if (x2+y2 .gt. hugenum) exit
             enddo
+            ! if the point escapes, find the distance from the set, just in case its close 
+            ! to the set. if it is, it will make it part of the set.
 
             if (x2+y2 .ge. hugenum) then
               xder = 0
@@ -74,7 +96,7 @@ program Mandelbrot
                 dist = (log(x2+y2)*sqrt(x2+y2))/sqrt(xder**2+yder**2)
               endif
             endif
-
+            ! Assign the appropriate values to MSet in the place relating to the point in question
             if (dist .lt. delta) then
               MSet(ix,iy) = 1
             else
@@ -83,7 +105,7 @@ program Mandelbrot
         enddo  
       enddo
 
-      ! Call my Fortran code to write Mandelbrot picture to disk
+      ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
       call pgma_write ( file_name, nx, ny, Mset, ierror )
 	
       deallocate(MSet,xorbit,yorbit)
