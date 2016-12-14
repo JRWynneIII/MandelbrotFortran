@@ -31,16 +31,18 @@ After iterating over each point, the grid is then passed to a function that will
 directory. The function is code by John Burkardt and can be obtained [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html)
 
 ####OpenMP
-The OpenMP parallelized version of this code is availible in the file openmp_mandelbrot.f90. The important difference fom the serial version is the following OpenMP pragma statement. As you can see on line 52 it reads
+The OpenMP parallelized version of this code is availible in the file openmp_mandelbrot.f90. The important difference fom the serial version is the following OpenMP pragma statement. As you can see on line 54 it reads
 ```C
-!$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) SHARED(MSet)
+!$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) &
+!$OMP SHARED(MSet) SCHEDULE(DYNAMIC,chunk)
 ```
-The closing pragma is on line 111 which reads
+The closing pragma is on line 114 which reads
 ```C
 !$OMP END PARALLEL DO
 ```
 
-This tells the compiler to separate the enclosed `DO` loop's iterations and run them in parallel on different threads. This is possible because the calculation for each point is independent on any of the surrounding points' calculations.
+This tells the compiler to separate the enclosed `DO` loop's iterations and run them in parallel on different threads. Private variables and arrays are used when each thread needs to have its own copy. A shared array is used to ensure that all threads update the same array, which is fine since they do so in separate locations.  This simple parallelization is possible because the calculation for each point is independent on any of the surrounding points' calculations. Dynamic scheduling is used because some locations may
+take much longer than others to compute.
 
 Again, once the calculations are complete, we rely on  John Burkardt's programs from [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html), to save the image. 
 

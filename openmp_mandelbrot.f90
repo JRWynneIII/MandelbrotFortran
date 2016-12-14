@@ -31,6 +31,8 @@ program Mandelbrot
       logical :: flag = .false.
       integer(kind=4),parameter :: overflow = 2147483647
       real(kind=8) :: delta 
+      ! chunk size for dynamic scheduling of shared memory loop
+      integer(kind=4),parameter :: chunk = 5
       ! name of file to write image out to
       character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
       delta = (threshold*(xmax-xmin))/real(nx)
@@ -49,7 +51,8 @@ program Mandelbrot
 
       ! The use of the OpenMP pragma here will divide up the iterations between threads and execute them in parallel
       ! This region is VERY easily parallelized because there is NO data shared between the loop iterations.
-      !$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) SHARED(MSet)
+      !$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) &
+      !$OMP SHARED(MSet) SCHEDULE(DYNAMIC,Chunk)
       do iy=1,ny
         cy = ymin+(iy-1)*(ymax-ymin)/real(ny-1) 
         do ix=1,nx
