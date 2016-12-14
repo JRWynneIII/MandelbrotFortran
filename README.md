@@ -30,14 +30,32 @@ not escape and will write a "1" in the grid.
 After iterating over each point, the grid is then passed to a function that will write out a pgm image to the current working 
 directory. The function is code by John Burkardt and can be obtained [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html)
 
+####OpenMP
+The OpenMP parallelized version of this code is availible in the file openmp_mandelbrot.f90. The important difference fom the serial version is the following OpenMP pragma statement. As you can see on line 52 it reads
+```C
+!$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) SHARED(MSet)
+```
+The closing pragma is on line 111 which reads
+```C
+!$OMP END PARALLEL DO
+```
+
+This tells the compiler to separate the enclosed `DO` loop's iterations and run them in parallel on different threads. This is possible because the calculation for each point is independent on any of the surrounding points' calculations.
+
+Again, once the calculations are complete, we rely on  John Burkardt's programs from [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html), to save the image. 
+
 ####Compiling
-To compile the serial code use your fortran compiler, for example
+To compile the codes use your fortran compiler, for example
 
   gfortran serial_mandelbrot.f90 -o serial_mandelbrot
+
+  gfortran -fopenmp openmp_mandelbrot.f90 -o openmp_mandelbrot
 
 The code can then be run
 
   ./serial_mandelbrot
+  
+  ./openmp_mandelbrot
 
 and once it completes should put a picture file in the running directory. The picture can be opened in many viewers, such as 
 [GIMP](https://www.gimp.org/) or [Gwenview](https://userbase.kde.org/Gwenview)
