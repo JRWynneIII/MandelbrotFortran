@@ -20,7 +20,7 @@ program Mandelbrot
       real(kind=8) :: dist = 0
       integer(kind=4) :: ix, iy
       real(kind=8) :: cx, cy
-      integer(kind=4) :: iter, i, ierror
+      integer(kind=4) :: iter, i, ierror, allocatestatus
       real(kind=8) :: x,y,x2,y2
       real(kind=8) :: temp = 0.0
       real(kind=8) :: xder = 0.0
@@ -35,9 +35,10 @@ program Mandelbrot
       integer(kind=4),parameter :: chunk = 5
       ! name of file to write image out to
       character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
-      delta = (threshold*(xmax-xmin))/real(nx)
+      delta = (threshold*(xmax-xmin))/real(nx-1)
 
-      allocate(MSet(1:nx,1:ny), xorbit(maxiter), yorbit(maxiter))
+      allocate(MSet(1:nx,1:ny), xorbit(maxiter), yorbit(maxiter),stat=allocatestatus)
+      if (allocatestatus .ne. 0) stop	
 
       ! We use a nested loop here to effectively traverse over each part of the grid (pixel of the image)
       ! in sequence. First, the complex values of the points are determined and then used as the basis of 
@@ -116,7 +117,8 @@ program Mandelbrot
       ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
       call pgma_write ( file_name, nx, ny, Mset, ierror )
 	
-      deallocate(MSet,xorbit,yorbit)
+      deallocate(MSet,xorbit,yorbit,stat=allocatestatus)
+      if (allocatestatus .ne. 0) stop	
 end program Mandelbrot
 
 

@@ -31,12 +31,12 @@ After iterating over each point, the grid is then passed to a function that will
 directory. The function is code by John Burkardt and can be obtained [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html)
 
 ####OpenMP
-The OpenMP parallelized version of this code is availible in the file openmp_mandelbrot.f90. The important difference fom the serial version is the following OpenMP pragma statement. As you can see on line 54 it reads
+The OpenMP parallelized version of this code is availible in the file openmp_mandelbrot.f90. The important difference fom the serial version is the following OpenMP pragma statement. As you can see on line 55 it reads
 ```C
 !$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) &
 !$OMP SHARED(MSet) SCHEDULE(DYNAMIC,chunk)
 ```
-The closing pragma is on line 114 which reads
+The closing pragma is on line 115 which reads
 ```C
 !$OMP END PARALLEL DO
 ```
@@ -46,6 +46,15 @@ take much longer than others to compute.
 
 Again, once the calculations are complete, we rely on  John Burkardt's programs from [here](http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html), to save the image. 
 
+####MPI Version 1
+
+This version is in the file mpi_1_mandelbrot.f90. It uses a static decomposition of the domain. This ignores the fact that 
+portions near the boundary of the Mandelbrot set may take a very long time to compute compared to other portions of the domain.
+
+####MPI Version 2
+
+This uses a queue to ensure load balancing. The approach is documented in Balras [Multicore and GPU programming: An integrated approach](http://store.elsevier.com/Multicore-and-GPU-Programming/Gerassimos-Barlas/isbn-9780124171374/) with code [here](booksite.elsevier.com/9780124171374/download/mcore_code_v1.03.zip), as well as in Gropp, Lusk and Skelljum [Using MPI](https://mitpress.mit.edu/books/using-mpi) with code [here](ftp.mcs.anl.gov/pub/mpi/usingmpi-1st/examples.tar.gz)
+
 ####Compiling
 To compile the codes use your fortran compiler, for example
 
@@ -53,11 +62,15 @@ To compile the codes use your fortran compiler, for example
 
   gfortran -fopenmp openmp_mandelbrot.f90 -o openmp_mandelbrot
 
+  mpif90 -fopenmp mpi_1_mandelbrot.f90 -o mpi_1_mandelbrot
+
 The code can then be run
 
   ./serial_mandelbrot
   
   ./openmp_mandelbrot
+ 
+  mpirun mpi_1_mandelbrot
 
 and once it completes should put a picture file in the running directory. The picture can be opened in many viewers, such as 
 [GIMP](https://www.gimp.org/) or [Gwenview](https://userbase.kde.org/Gwenview)
