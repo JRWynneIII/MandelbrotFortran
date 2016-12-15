@@ -49,12 +49,12 @@ program Mandelbrot
 
       if(myid.eq.0) then
         mystart=1+floor(myid*Nx*Ny/real(numprocs))
-        myend=min(1+floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+        myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
         allocate(MSet(1:nx,1:ny),myMSet(mystart:myend), xorbit(maxiter), yorbit(maxiter),stat=allocatestatus)
         if (allocatestatus .ne. 0) stop	
       else
         mystart=1+floor(myid*Nx*Ny/real(numprocs))
-        myend=min(1+floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+        myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
         allocate(myMSet(mystart:myend), xorbit(maxiter), yorbit(maxiter),stat=allocatestatus)
         if (allocatestatus .ne. 0) stop	
       endif
