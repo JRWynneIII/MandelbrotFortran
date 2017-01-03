@@ -1,3 +1,81 @@
+
+!*****************************************************************************80
+!
+!! MPI_1_Mandelbrot produces an image with the Mandelbrot pattern.
+!
+!  Discussion:
+!
+!   This project creates an image of a Mandelbrot fractal 
+!   (http://en.wikipedia.org/wiki/Mandelbrot_set). This code is a hybrid 
+!   OpenMP and MPI version.
+!
+!   This code uses the Distance Estimator 
+!   (http://mrob.com/pub/muency/distanceestimator.html) method to calculate 
+!   the Mandelbrot set. Each pixel requires its own independent unit of work. 
+!   Because these units of work are independent, it is a prime candidate 
+!   for parallelizaion. 
+!
+!   The code will perform an iterative calculation at each point that will 
+!   determine weather the point escapes the set 
+!   (http://en.wikipedia.org/wiki/Mandelbrot_set#Formal_definition). If the 
+!   point doesn't escape, then it is considered part of the Mandelbrot set 
+!   and the pixel is painted black.
+!
+!   The Distance Estimator comes into play if the point escapes very slowly 
+!   (takes many iterations before it escapes). For visualization purposes, we 
+!   consider these points to be part of the set. By doing this, it will 
+!   "reveal" more of the set than the standard method. 
+!
+!   At the beginning of the code, a 2 dimensional grid is allocated 
+!   in memory. This grid will hold either a 1 or 0 in each element to 
+!   represent whether a point is in the set or not. 
+!
+!   The code then iterates over each point in the grid and performs the 
+!   Distance Estimator calculation. When the calculation determines 
+!   if the point escapes, it breaks out of the loop and writes a "0" in the 
+!   grid for that point. Else, it will infer that the point does not escape 
+!   and will write a "1" in the grid. 
+! 
+!   After iterating over each point, the grid is then passed to a function 
+!   that will write out a pgm image to the current working directory. The 
+!   function is code by John Burkardt and can be obtained at 
+!   http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html
+!
+!   This version uses a static decomposition of the domain. This 
+!   ignores the fact that portions near the boundary of the 
+!   Mandelbrot set may take a very long time to compute compared 
+!   to other portions of the domain.
+!
+!   To compile the code use your fortran compiler with MPI wrapper, 
+!   for example gfortran or OpenMPI/mpich/mvapich and gfortran
+!
+!   mpif90 -fopenmp mpi_1_mandelbrot.f90 -o mpi_1_mandelbrot
+!
+!   The code can then be run
+!
+!   mpirun mpi_1_mandelbrot
+!
+!   and once it completes, should put a picture file in the running directory.
+!   The picture can be opened in many viewers, such as GIMP 
+!   (https://www.gimp.org/) or Gwenview (https://userbase.kde.org/Gwenview)
+!
+!  Licensing:
+!
+!     
+!
+!  Modified:
+!
+!    3 January 2016
+!
+!  Author:
+!
+!    James Riley Wynne III
+!
+!  Last Modified By:
+!
+!    Benson Muite
+!
+
 program Mandelbrot
       use mpi
       use omp_lib
@@ -9,16 +87,16 @@ program Mandelbrot
       ! Maximum number of iterations
       integer(kind=4), parameter :: maxiter = 2000
       ! Use a two dimensional array to hold data for the global image
-      integer(kind=4),dimension(:,:),allocatable :: MSet
+      integer(kind=4), dimension(:,:), allocatable :: MSet
       ! Use a one dimensional array to hold data for the global image
-      integer(kind=4),dimension(:),allocatable :: myMSet
+      integer(kind=4), dimension(:), allocatable :: myMSet
       ! Change maximum and minimum values of the window that the
       ! appear in the image. Increase the values and you zoom out
       ! decrease the values and you zoom in
-      integer(kind=4) :: xmin = -2
-      integer(kind=4) :: ymin = -2
-      integer(kind=4) :: xmax = 2
-      integer(kind=4) :: ymax = 2
+      integer(kind=4), parameter :: xmin = -2
+      integer(kind=4), parameter :: ymin = -2
+      integer(kind=4), parameter :: xmax = 2
+      integer(kind=4), parameter :: ymax = 2
       real(kind=8) :: threshold = 1
       real(kind=8) :: dist = 0
       integer(kind=4) :: ix, iy, ii, proc
@@ -28,44 +106,59 @@ program Mandelbrot
       real(kind=8) :: temp = 0.0
       real(kind=8) :: xder = 0.0
       real(kind=8) :: yder = 0.0
-      real(kind=8),dimension(1:maxiter) :: xorbit
-      real(kind=8),dimension(1:maxiter) :: yorbit
+      real(kind=8), dimension(1:maxiter) :: xorbit
+      real(kind=8), dimension(1:maxiter) :: yorbit
       integer(kind=4) :: hugenum = 100000
       logical :: flag = .false.
-      integer(kind=4),parameter :: overflow = 2147483647
+      integer(kind=4), parameter :: overflow = 2147483647
       real(kind=8) :: delta 
       ! chunk size for dynamic scheduling of shared memory loop
-      integer(kind=4),parameter :: chunk = 1 
+      integer(kind=4), parameter :: chunk = 1 
       ! name of file to write image out to
       character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
       ! MPI variables
-      integer(kind=4) :: ierr, myid, numprocs, mystart, myend, itemcount, procstart, procend
+      integer(kind=4) :: ierr, myid, numprocs, mystart, myend
+      integer(kind=4) :: itemcount, procstart, procend
       integer(kind=4) :: mpistat(MPI_STATUS_SIZE) 
       delta = (threshold*(xmax-xmin))/real(nx-1)
       ! initialisation of MPI
       call MPI_INIT(ierr)
       call MPI_COMM_SIZE(MPI_COMM_WORLD, numprocs, ierr)
       call MPI_COMM_RANK(MPI_COMM_WORLD, myid, ierr)
+      if (myid.eq.0) then
+        print *,"Program to calculate Mandelbrot set started"
+      end if
       mystart=1+floor(myid*Nx*Ny/real(numprocs))
       myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
       allocate(MSet(1:nx,1:ny),myMSet(mystart:myend),stat=allocatestatus)
       if (allocatestatus .ne. 0) stop
       MSet(1:nx,1:ny)=0
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Memory allocated"
+      end if
 
-      ! We use a nested loop here to effectively traverse over each part of the grid (pixel of the image)
-      ! in sequence. First, the complex values of the points are determined and then used as the basis of 
-      ! the computaion. Effectively, it will loop over each point (pixel) and according on how many iterations 
-      ! it takes for the value that the mathematical function returns on each iteration it will determine 
-      ! whether or not the point "escapes" to infinity (or an arbitrarily large number.) or not. If it takes 
-      ! few iterations to escape then it will decide that this point is NOT part of the Mandelbrot set and 
-      ! will put a 0 in that point's index in MSet. If it takes nearly all or all of the iterations to escape, 
-      ! then it will decide that the point/pixel is part of the Mandelbrot set and instead put a 1 in its place 
-      ! in myMSet.
-
-      ! The use of the OpenMP pragma here will divide up the iterations between threads and execute them in parallel
-      ! This region is VERY easily parallelized because there is NO data shared between the loop iterations.
-      !$OMP PARALLEL DO PRIVATE(ii,ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) &
+      ! We use a nested loop here to effectively traverse over each part of the
+      ! grid (pixel of the image) in sequence. First, the complex values of the
+      ! points are determined and then used as the basis of the computaion. 
+      ! Effectively, it will loop over each point (pixel) and according on how
+      ! many iterations it takes for the value that the mathematical function 
+      ! returns on each iteration it will determine whether or not the point 
+      ! "escapes" to infinity (or an arbitrarily large number.) or not. If it 
+      ! takes few iterations to escape then it will decide that this point is
+      ! NOT part of the Mandelbrot set and will put a 0 in that point's index
+      ! in MSet. If it takes nearly all or all of the iterations to escape, 
+      ! then it will decide that the point/pixel is part of the Mandelbrot set
+      ! and instead put a 1 in its place in myMSet.
+      !
+      ! The use of the OpenMP pragma here will divide up the iterations between
+      ! threads and execute them in parallel.
+      !
+      ! This region is VERY easily parallelized because there is NO data shared
+      ! between the loop iterations.
+      !$OMP PARALLEL DO &
+      !$OMP PRIVATE(ii,ix,iy,cx,cy,iter,i,x,y,x2,y2) &
+      !$OMP PRIVATE(temp,xder,yder,dist,xorbit,yorbit,flag) &
       !$OMP ORDERED SHARED(myMSet) SCHEDULE(DYNAMIC,chunk)
       do ii=mystart,myend
         iy=1+floor((ii-1)/real(Nx))
@@ -82,8 +175,8 @@ program Mandelbrot
         yder = 0
         dist = 0
         cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
-        ! This is the main loop that determins whether or not the point escapes or not. 
-        ! It breaks out of the loop when it escapes
+        ! This is the main loop that determins whether or not the point escapes
+        ! or not. It breaks out of the loop when it escapes
         do iter = 0,maxiter-1
           temp = x2-y2 + cx
           y = 2.0*x*y+cy
@@ -95,8 +188,8 @@ program Mandelbrot
           ! if point escapes then break to next loop
           if (x2+y2 .gt. hugenum) exit
         enddo
-        ! if the point escapes, find the distance from the set, just in case its close 
-        ! to the set. if it is, it will make it part of the set.
+        ! if the point escapes, find the distance from the set, just in case 
+        ! its close to the set. if it is, it will make it part of the set.
 
         if (x2+y2 .ge. hugenum) then
           xder = 0
@@ -118,7 +211,8 @@ program Mandelbrot
             dist = (log(x2+y2)*sqrt(x2+y2))/sqrt(xder**2+yder**2)
           endif
         endif
-        ! Assign the appropriate values to MSet in the place relating to the point in question
+        ! Assign the appropriate values to MSet in the place relating to 
+        ! the point in question
         if (dist .lt. delta) then
           myMSet(ix+Nx*(iy-1)) = 1
         else
@@ -127,9 +221,12 @@ program Mandelbrot
       enddo  
       !$OMP END PARALLEL DO
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Mandelbrot set calculated on each process"
+      end if
 
-      ! Get Process 0 to collect data and write out a file. This is scalable to a moderate 
-      ! number of processes, limited by memory on process 0.
+      ! Get Process 0 to collect data and write out a file. This is scalable
+      ! to a moderate number of processes, limited by memory on process 0.
       if (myid.eq.0) then
         do ii=mystart,myend
           iy=1+floor((ii-1)/real(Nx))
@@ -142,7 +239,8 @@ program Mandelbrot
             procstart=1+floor(proc*Nx*Ny/real(numprocs))
             procend=min(floor((proc+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
             itemcount=1+procend-procstart
-            call MPI_RECV(myMSet,itemcount,MPI_INTEGER,proc,proc,MPI_COMM_WORLD,mpistat,ierr)
+            call MPI_RECV(myMSet,itemcount,MPI_INTEGER,proc,proc, &
+                          MPI_COMM_WORLD,mpistat,ierr)
             ! copy data into main array
             do ii=procstart,procend
               iy=1+floor((ii-1)/real(Nx))
@@ -157,11 +255,14 @@ program Mandelbrot
          call MPI_SEND(myMSet,itemcount,MPI_INTEGER,0,myid,MPI_COMM_WORLD,ierr)
       end if
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      print *,"Data collection on process 0 complete"
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Mandelbrot set collected on one process"
+      end if
+
       if (myid.eq.0) then
         ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
         call pgma_write ( file_name, nx, ny, Mset, ierror )
+        print *,"Saved image file to disk"
       end if
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       deallocate(MSet,myMSet,stat=allocatestatus)
@@ -234,6 +335,7 @@ subroutine get_unit ( iunit )
 
   return
 end
+
 subroutine pgma_write ( file_out_name, row_num, col_num, g, ierror )
 
 !*****************************************************************************80
@@ -260,11 +362,19 @@ subroutine pgma_write ( file_out_name, row_num, col_num, g, ierror )
 !
 !  Modified:
 !
-!    01 March 2003
+!    2 January 2017
+!
+!  Original Source Code:
+!
+!     http://people.sc.fsu.edu/%7Ejburkardt/f_src/pgma_io/pgma_io.f90
 !
 !  Author:
 !
 !    John Burkardt
+!
+!  Last Modified by:
+! 
+!    Benson Muite
 !
 !  Parameters:
 !
@@ -286,11 +396,10 @@ subroutine pgma_write ( file_out_name, row_num, col_num, g, ierror )
 
   integer ( kind = 4 ), intent(in) :: col_num
   integer ( kind = 4 ), intent(in) :: row_num
-
-  logical, parameter :: debug = .false.
   character ( len = * ), intent(in) ::  file_out_name
-  integer ( kind = 4 ) file_out_unit
   integer ( kind = 4 ), dimension(1:row_num,1:col_num), intent(in) :: g
+  logical, parameter :: debug = .false.
+  integer ( kind = 4 ) file_out_unit
   integer ( kind = 4 ) ierror
   integer ( kind = 4 ) ios
   integer ( kind = 4 ) g_max
@@ -353,11 +462,19 @@ subroutine pgma_write_data ( file_out_unit, row_num, col_num, g, ierror )
 !
 !  Modified:
 !
-!    28 February 2003
+!    2 January 2017
+!
+!  Original Source Code:
+!
+!     http://people.sc.fsu.edu/%7Ejburkardt/f_src/pgma_io/pgma_io.f90
 !
 !  Author:
 !
 !    John Burkardt
+!
+!  Last Modified by:
+! 
+!    Benson Muite
 !
 !  Parameters:
 !
@@ -378,11 +495,10 @@ subroutine pgma_write_data ( file_out_unit, row_num, col_num, g, ierror )
 
   integer ( kind = 4 ), intent(in) :: col_num
   integer ( kind = 4 ), intent(in) :: row_num
-
-  integer ( kind = 4 ), intent(in) :: file_out_unit
   integer ( kind = 4 ), dimension(1:row_num,1:col_num), intent(in) ::  g
-  integer ( kind = 4 ) i
+  integer ( kind = 4 ), intent(in) :: file_out_unit
   integer ( kind = 4 ), intent(out) :: ierror
+  integer ( kind = 4 ) i
   integer ( kind = 4 ) jhi
   integer ( kind = 4 ) jlo
 
@@ -408,13 +524,22 @@ subroutine pgma_write_header ( file_out_name, file_out_unit, row_num, col_num, &
 !
 !    This code is distributed under the GNU LGPL license. 
 !
+!
 !  Modified:
 !
-!    01 March 2003
+!    2 January 2017
+!
+!  Original Source Code:
+!
+!     http://people.sc.fsu.edu/%7Ejburkardt/f_src/pgma_io/pgma_io.f90
 !
 !  Author:
 !
 !    John Burkardt
+!
+!  Last Modified by:
+! 
+!    Benson Muite
 !
 !  Parameters:
 !
@@ -436,11 +561,11 @@ subroutine pgma_write_header ( file_out_name, file_out_unit, row_num, col_num, &
 
   character ( len = * ), intent(in) :: file_out_name
   integer ( kind = 4 ), intent(in) :: file_out_unit
-  integer ( kind = 4 ), intent(out) :: ierror
-  character ( len = 2 ) :: magic = 'P2'
   integer ( kind = 4 ), intent(in) :: g_max
   integer ( kind = 4 ), intent(in) :: col_num
   integer ( kind = 4 ), intent(in) :: row_num
+  integer ( kind = 4 ), intent(out) :: ierror
+  character ( len = 2 ) :: magic = 'P2'
 
   ierror = 0
 !

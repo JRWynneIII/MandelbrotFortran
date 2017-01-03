@@ -1,13 +1,13 @@
 
 !*****************************************************************************80
 !
-!! openmp_Mandelbrot produces an image with the Mandelbrot pattern.
+!! MPI_2_Mandelbrot produces an image with the Mandelbrot pattern.
 !
 !  Discussion:
 !
 !   This project creates an image of a Mandelbrot fractal 
-!   (http://en.wikipedia.org/wiki/Mandelbrot_set). This code is an OpenMP 
-!   version.
+!   (http://en.wikipedia.org/wiki/Mandelbrot_set). This code is a hybrid 
+!   OpenMP and MPI version.
 !
 !   This code uses the Distance Estimator 
 !   (http://mrob.com/pub/muency/distanceestimator.html) method to calculate 
@@ -41,13 +41,19 @@
 !   function is code by John Burkardt and can be obtained at 
 !   http://people.sc.fsu.edu/~jburkardt/f_src/pgma_io/pgma_io.html
 !
-!   To compile the code use your fortran compiler, for example gfortran 
+!   This version uses a dynamic decomposition of the domain. Small portions
+!   of the entire domain are dispatched to MPI processes to compute. When
+!   an process finishes its computation, it requests another portion of the 
+!   the domain to compute.
 !
-!   gfortran -fopenmp openmp_mandelbrot.f90 -o openmp_mandelbrot
+!   To compile the code use your fortran compiler with MPI wrapper, 
+!   for example gfortran or OpenMPI/mpich/mvapich and gfortran
+!
+!   mpif90 -fopenmp mpi_2_mandelbrot.f90 -o mpi_2_mandelbrot
 !
 !   The code can then be run
 !
-!   ./openmp_mandelbrot
+!   mpirun mpi_2_mandelbrot
 !
 !   and once it completes, should put a picture file in the running directory.
 !   The picture can be opened in many viewers, such as GIMP 
@@ -69,129 +75,225 @@
 !
 !    Benson Muite
 !
+! IN PROGRESS
+
 program Mandelbrot
-      use omp_lib
+      use mpi
       implicit none
 
       ! x and y resolution
-      integer(kind=4) :: nx = 1000
-      integer(kind=4) :: ny = 1000
+      integer(kind=4), parameter :: nx = 1000
+      integer(kind=4), parameter :: ny = 1000
       ! Maximum number of iterations
-      integer(kind=4) :: maxiter = 2000
-      ! Use a two dimensional array to hold data for the image
-      integer(kind=4),dimension(:,:),allocatable :: MSet
+      integer(kind=4), parameter :: maxiter = 2000
+      ! Number of points to process in each chunk given to an MPI task
+      ! this should be smaller than nx * ny
+      integer(kind=4), parameter :: processchunk = 100
+      ! Use a two dimensional array to hold data for the global image
+      integer(kind=4), dimension(:,:), allocatable :: MSet
+      ! Use a one dimensional array to hold data for the global image
+      integer(kind=4), dimension(:), allocatable :: myMSet
       ! Change maximum and minimum values of the window that the
       ! appear in the image. Increase the values and you zoom out
       ! decrease the values and you zoom in
-      integer(kind=4) :: xmin = -2
-      integer(kind=4) :: ymin = -2
-      integer(kind=4) :: xmax = 2
-      integer(kind=4) :: ymax = 2
+      integer(kind=4), parameter :: xmin = -2
+      integer(kind=4), parameter :: ymin = -2
+      integer(kind=4), parameter :: xmax = 2
+      integer(kind=4), parameter :: ymax = 2
+      integer(kind=4) :: ix, iy, ii, proc
+      integer(kind=4) :: iter, i, ierror, allocatestatus
+      ! name of file to write image out to
+      character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
+      ! MPI variables
+      integer(kind=4) :: ierr, myid, numprocs, mystart, myend
+      integer(kind=4) :: itemcount, procstart, procend
+      integer(kind=4) :: mpistat(MPI_STATUS_SIZE) 
+      delta = (threshold*(xmax-xmin))/real(nx-1)
+      ! initialisation of MPI
+      call MPI_INIT(ierr)
+      call MPI_COMM_SIZE(MPI_COMM_WORLD, numprocs, ierr)
+      call MPI_COMM_RANK(MPI_COMM_WORLD, myid, ierr)
+      if (myid.eq.0) then
+        print *,"Program to calculate Mandelbrot set started"
+      end if
+      mystart=1+floor(myid*Nx*Ny/real(numprocs))
+      myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+      allocate(MSet(1:nx,1:ny),myMSet(1:processchunk),stat=allocatestatus)
+      if (allocatestatus .ne. 0) stop
+      MSet(1:nx,1:ny)=0
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Memory allocated"
+      end if
+
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Mandelbrot set calculated on each process"
+      end if
+
+      ! Get Process 0 to collect data and write out a file. This is scalable
+      ! to a moderate number of processes, limited by memory on process 0.
+      if (myid.eq.0) then
+
+        do ii=1,nx*ny,processchunk
+
+
+        end do
+        do ii=mystart,myend
+          iy=1+floor((ii-1)/real(Nx))
+          ix=ii-(iy-1)*Nx
+          MSet(ix,iy)=myMSet(ix+Nx*(iy-1))
+        end do
+
+        if (numprocs.gt.1) then
+          do proc=1,numprocs-1
+            procstart=1+floor(proc*Nx*Ny/real(numprocs))
+            procend=min(floor((proc+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+            itemcount=1+procend-procstart
+            call MPI_RECV(myMSet,itemcount,MPI_INTEGER,proc,proc, &
+                          MPI_COMM_WORLD,mpistat,ierr)
+            ! copy data into main array
+            do ii=procstart,procend
+              iy=1+floor((ii-1)/real(Nx))
+              ix=ii-(iy-1)*Nx
+              MSet(ix,iy)=myMSet(mystart+ix+Nx*(iy-1)-procstart)
+            end do
+          end do
+        end if
+      else
+         ! other processes send data to process 0
+         itemcount=1+myend-mystart
+         call MPI_SEND(myMSet,itemcount,MPI_INTEGER,0,myid,MPI_COMM_WORLD,ierr)
+      end if
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      if (myid.eq.0) then
+        print *,"Mandelbrot set collected on one process"
+      end if
+
+      if (myid.eq.0) then
+        ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
+        call pgma_write ( file_name, nx, ny, Mset, ierror )
+        print *,"Saved image file to disk"
+      end if
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      deallocate(MSet,myMSet,stat=allocatestatus)
+      if (allocatestatus .ne. 0) stop
+      call MPI_FINALIZE(ierr)
+end program Mandelbrot
+
+
+subroutine calcset(nx,ny,mystart,myend,processchunk,xmax,xmin,ymax,ymin,myMSet)
+
+      ! We use a nested loop here to effectively traverse over each part of the
+      ! grid (pixel of the image) in sequence. First, the complex values of the
+      ! points are determined and then used as the basis of the computaion. 
+      ! Effectively, it will loop over each point (pixel) and according on how
+      ! many iterations it takes for the value that the mathematical function 
+      ! returns on each iteration it will determine whether or not the point 
+      ! "escapes" to infinity (or an arbitrarily large number.) or not. If it 
+      ! takes few iterations to escape then it will decide that this point is
+      ! NOT part of the Mandelbrot set and will put a 0 in that point's index
+      ! in MSet. If it takes nearly all or all of the iterations to escape, 
+      ! then it will decide that the point/pixel is part of the Mandelbrot set
+      ! and instead put a 1 in its place in myMSet.
+      !
+      ! The use of the OpenMP pragma here will divide up the iterations between
+      ! threads and execute them in parallel.
+      !
+      ! This region is VERY easily parallelized because there is NO data shared
+      ! between the loop iterations.
+
+
+      use omp_lib
+      implicit none
+
+      integer(kind=4), intent(in) :: nx, ny, maxiter, mystart, myend 
+      integer(kind=4), intent(in) :: processchunk 
+      real(kind=8), intent(in) :: xmax, xmin, ymax, ymin
+      integer(kind=8), intent(out), dimension(1:processchunk) :: myMset
       real(kind=8) :: threshold = 1
       real(kind=8) :: dist = 0
-      integer(kind=4) :: ix, iy
+      integer(kind=4) :: ix, iy, ii, proc
       real(kind=8) :: cx, cy
       integer(kind=4) :: iter, i, ierror, allocatestatus
       real(kind=8) :: x,y,x2,y2
       real(kind=8) :: temp = 0.0
       real(kind=8) :: xder = 0.0
       real(kind=8) :: yder = 0.0
-      real(kind=8),dimension(:),allocatable :: xorbit
-      real(kind=8),dimension(:),allocatable :: yorbit
-      integer(kind=4) :: hugenum = 100000
+      real(kind=8), dimension(1:maxiter) :: xorbit
+      real(kind=8), dimension(1:maxiter) :: yorbit
+      integer(kind=4), parameter :: hugenum = 100000
       logical :: flag = .false.
-      integer(kind=4),parameter :: overflow = 2147483647
+      integer(kind=4), parameter :: overflow = 2147483647
       real(kind=8) :: delta 
       ! chunk size for dynamic scheduling of shared memory loop
-      integer(kind=4),parameter :: chunk = 5
-      ! name of file to write image out to
-      character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
-      delta = (threshold*(xmax-xmin))/real(nx-1)
+      integer(kind=4), parameter :: chunk = 1 
 
-      allocate(MSet(1:nx,1:ny), xorbit(maxiter), yorbit(maxiter),stat=allocatestatus)
-      if (allocatestatus .ne. 0) stop	
-
-      ! We use a nested loop here to effectively traverse over each part of the grid (pixel of the image)
-      ! in sequence. First, the complex values of the points are determined and then used as the basis of 
-      ! the computaion. Effectively, it will loop over each point (pixel) and according on how many iterations 
-      ! it takes for the value that the mathematical function returns on each iteration it will determine 
-      ! whether or not the point "escapes" to infinity (or an arbitrarily large number.) or not. If it takes 
-      ! few iterations to escape then it will decide that this point is NOT part of the Mandelbrot set and 
-      ! will put a 0 in that point's index in MSet. If it takes nearly all or all of the iterations to escape, 
-      ! then it will decide that the point/pixel is part of the Mandelbrot set and instead put a 1 in its place 
-      ! in MSet.
-
-      ! The use of the OpenMP pragma here will divide up the iterations between threads and execute them in parallel
-      ! This region is VERY easily parallelized because there is NO data shared between the loop iterations.
-      !$OMP PARALLEL DO PRIVATE(ix,iy,cx,cy,iter,i,x,y,x2,y2,temp,xder,yder,dist,xorbit,yorbit,flag) &
-      !$OMP SHARED(MSet) SCHEDULE(DYNAMIC,Chunk)
-      do iy=1,ny
+      !$OMP PARALLEL DO &
+      !$OMP PRIVATE(ii,ix,iy,cx,cy,iter,i,x,y,x2,y2) &
+      !$OMP PRIVATE(temp,xder,yder,dist,xorbit,yorbit,flag) &
+      !$OMP ORDERED SHARED(myMSet) SCHEDULE(DYNAMIC,chunk)
+      do ii=mystart,myend
+        iy=1+floor((ii-1)/real(nx))
+        ix=ii-(iy-1)*nx
         cy = ymin+(iy-1)*(ymax-ymin)/real(ny-1) 
-        do ix=1,nx
-            iter = 0
-            i = 0
-            x = 0
-            y = 0
-            x2 = 0
-            y2 = 0
-            temp = 0
-            xder = 0
-            yder = 0
-            dist = 0
-            cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
-            ! This is the main loop that determins whether or not the point escapes or not. 
-            ! It breaks out of the loop when it escapes
-            do iter = 0,maxiter
-              temp = x2-y2 + cx
-              y = 2.0*x*y+cy
-              x = temp
-              x2 = x**2
-              y2 = y**2
-              xorbit(iter+1) = x
-              yorbit(iter+1) = y
-              ! if point escapes then break to next loop
-              if (x2+y2 .gt. hugenum) exit
-            enddo
-            ! if the point escapes, find the distance from the set, just in case its close 
-            ! to the set. if it is, it will make it part of the set.
+        iter = 0
+        i = 0
+        x = 0
+        y = 0
+        x2 = 0
+        y2 = 0
+        temp = 0
+        xder = 0
+        yder = 0
+        dist = 0
+        cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
+        ! This is the main loop that determins whether or not the point escapes
+        ! or not. It breaks out of the loop when it escapes
+        do iter = 0,maxiter-1
+          temp = x2-y2 + cx
+          y = 2.0*x*y+cy
+          x = temp
+          x2 = x**2
+          y2 = y**2
+          xorbit(iter+1) = x
+          yorbit(iter+1) = y
+          ! if point escapes then break to next loop
+          if (x2+y2 .gt. hugenum) exit
+        enddo
+        ! if the point escapes, find the distance from the set, just in case 
+        ! its close to the set. if it is, it will make it part of the set.
 
-            if (x2+y2 .ge. hugenum) then
-              xder = 0
-              yder = 0
-              i = 0
-              flag = .false.
+        if (x2+y2 .ge. hugenum) then
+          xder = 0
+          yder = 0
+          i = 0
+          flag = .false.
 
-              do i=0, iter
+          do i=1, iter
                 
-                if (flag .eqv. .true.) exit
+            if (flag .eqv. .true.) exit
                 
-                temp = 2*(xorbit(i)*xder-yorbit(i)*yder)+1
-                yder = 2*(yorbit(i)*xder+xorbit(i)*yder)
-                xder = temp
-                flag = max(abs(xder),abs(yder)) > overflow
-              enddo
+            temp = 2*(xorbit(i)*xder-yorbit(i)*yder)+1
+            yder = 2*(yorbit(i)*xder+xorbit(i)*yder)
+            xder = temp
+            flag = max(abs(xder),abs(yder)) > overflow
+          enddo
 
-              if (flag .eqv. .false.) then
-                dist = (log(x2+y2)*sqrt(x2+y2))/sqrt(xder**2+yder**2)
-              endif
-            endif
-            ! Assign the appropriate values to MSet in the place relating to the point in question
-            if (dist .lt. delta) then
-              MSet(ix,iy) = 1
-            else
-              MSet(ix,iy) = 0
-            endif
-        enddo  
-      enddo
+          if (flag .eqv. .false.) then
+            dist = (log(x2+y2)*sqrt(x2+y2))/sqrt(xder**2+yder**2)
+          endif
+        endif
+        ! Assign the appropriate values to MSet in the place relating to 
+        ! the point in question
+        if (dist .lt. delta) then
+          myMSet(ix+Nx*(iy-1)-mystart+1) = 1
+        else
+          myMSet(ix+Nx*(iy-1)-mystart+1) = 0
+        endif
+      enddo  
       !$OMP END PARALLEL DO
-
-      ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
-      call pgma_write ( file_name, nx, ny, Mset, ierror )
-	
-      deallocate(MSet,xorbit,yorbit,stat=allocatestatus)
-      if (allocatestatus .ne. 0) stop	
-end program Mandelbrot
-
+end subroutine calcset
 
 subroutine get_unit ( iunit )
 
@@ -257,6 +359,7 @@ subroutine get_unit ( iunit )
 
   return
 end
+
 subroutine pgma_write ( file_out_name, row_num, col_num, g, ierror )
 
 !*****************************************************************************80

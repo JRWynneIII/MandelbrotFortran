@@ -5,13 +5,13 @@ MandelbrotFortran
 ---
 
 This project creates an image of a [Mandelbrot fractal](http://en.wikipedia.org/wiki/Mandelbrot_set). This repository contains 
-three separate codes: a serial version, an OpenMP version, and a hybrid OpenMP and MPI version.
+four separate codes: a serial version, an OpenMP version, and two hybrid OpenMP and MPI versions.
 
 This project uses the [Distance Estimator](http://mrob.com/pub/muency/distanceestimator.html) method to calculate the Mandelbrot 
 set. Each pixel requires its own independent unit of work. Because these units of work are independent, it is a prime candidate 
 for parallelizaion. 
 
-The code will perform an iterative calculation at each point that will determine weather if the point 
+The code will perform an iterative calculation at each point that will determine weather the point 
 [escapes the set](http://en.wikipedia.org/wiki/Mandelbrot_set#Formal_definition). If the point doesn't escape, then it is 
 considered part of the Mandelbrot set and the pixel is painted black.
 
@@ -56,7 +56,7 @@ portions near the boundary of the Mandelbrot set may take a very long time to co
 This uses a queue to ensure load balancing. The approach is documented in Balras [Multicore and GPU programming: An integrated approach](http://store.elsevier.com/Multicore-and-GPU-Programming/Gerassimos-Barlas/isbn-9780124171374/) with code [here](booksite.elsevier.com/9780124171374/download/mcore_code_v1.03.zip), as well as in Gropp, Lusk and Skelljum [Using MPI](https://mitpress.mit.edu/books/using-mpi) with code [here](ftp.mcs.anl.gov/pub/mpi/usingmpi-1st/examples.tar.gz)
 
 ####Compiling
-To compile the codes use your fortran compiler, for example
+To compile the codes use your fortran compiler, for example gfortran or OpenMPI/mpich/mvapich and gfortran
 
   gfortran serial_mandelbrot.f90 -o serial_mandelbrot
 
