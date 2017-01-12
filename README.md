@@ -64,6 +64,8 @@ To compile the codes use your fortran compiler, for example gfortran or OpenMPI/
 
   mpif90 -fopenmp mpi_1_mandelbrot.f90 -o mpi_1_mandelbrot
 
+  mpif90 -fopenmp mpi_2_mandelbrot.f90 -o mpi_2_mandelbrot
+
 The code can then be run
 
   ./serial_mandelbrot
@@ -71,6 +73,8 @@ The code can then be run
   ./openmp_mandelbrot
  
   mpirun mpi_1_mandelbrot
+
+  mpirun mpi_2_mandelbrot
 
 and once it completes should put a picture file in the running directory. The picture can be opened in many viewers, such as 
 [GIMP](https://www.gimp.org/) or [Gwenview](https://userbase.kde.org/Gwenview)
