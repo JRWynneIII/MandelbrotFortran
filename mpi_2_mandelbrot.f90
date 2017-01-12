@@ -75,20 +75,18 @@
 !
 !    Benson Muite
 !
-! IN PROGRESS
+
 
 program Mandelbrot
       use mpi
       implicit none
 
       ! x and y resolution
-      integer(kind=4), parameter :: nx = 1000
-      integer(kind=4), parameter :: ny = 1000
-      ! Maximum number of iterations
-      integer(kind=4), parameter :: maxiter = 2000
+      integer(kind=4), parameter :: nx = 100
+      integer(kind=4), parameter :: ny = 100
       ! Number of points to process in each chunk given to an MPI task
       ! this should be smaller than nx * ny
-      integer(kind=4), parameter :: processchunk = 100
+      integer(kind=4), parameter :: processchunk = 10
       ! Use a two dimensional array to hold data for the global image
       integer(kind=4), dimension(:,:), allocatable :: MSet
       ! Use a one dimensional array to hold data for the global image
@@ -100,79 +98,122 @@ program Mandelbrot
       integer(kind=4), parameter :: ymin = -2
       integer(kind=4), parameter :: xmax = 2
       integer(kind=4), parameter :: ymax = 2
-      integer(kind=4) :: ix, iy, ii, proc
-      integer(kind=4) :: iter, i, ierror, allocatestatus
+      integer(kind=4) :: ix, iy, ii, iii, chunks, chunknum
+      integer(kind=4) :: allocatestatus
+      logical :: stopcompute
       ! name of file to write image out to
       character ( len = 80 ) :: file_name = 'mandelbrot.ascii.pgm'
       ! MPI variables
       integer(kind=4) :: ierr, myid, numprocs, mystart, myend
-      integer(kind=4) :: itemcount, procstart, procend
+      integer(kind=4) :: procstart, procend, processnum, uplimit
       integer(kind=4) :: mpistat(MPI_STATUS_SIZE) 
-      delta = (threshold*(xmax-xmin))/real(nx-1)
+      
       ! initialisation of MPI
       call MPI_INIT(ierr)
       call MPI_COMM_SIZE(MPI_COMM_WORLD, numprocs, ierr)
       call MPI_COMM_RANK(MPI_COMM_WORLD, myid, ierr)
+      if (numprocs .lt. 2) then
+         print *,"This program needs two or more MPI processes to run"
+         stop
+      end if
       if (myid.eq.0) then
         print *,"Program to calculate Mandelbrot set started"
       end if
-      mystart=1+floor(myid*Nx*Ny/real(numprocs))
-      myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
-      allocate(MSet(1:nx,1:ny),myMSet(1:processchunk),stat=allocatestatus)
+      allocate(MSet(1:nx,1:ny),myMSet(1:processchunk+3),stat=allocatestatus)
       if (allocatestatus .ne. 0) stop
       MSet(1:nx,1:ny)=0
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       if (myid.eq.0) then
-        print *,"Memory allocated"
+        print *,"Memory allocated, starting Mandelbrot set calculation"
       end if
 
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      if (myid.eq.0) then
-        print *,"Mandelbrot set calculated on each process"
-      end if
-
+      chunks = floor((1.0d0*nx*ny) / (1.0d0*processchunk))
+      uplimit=min(chunks,numprocs-1)
       ! Get Process 0 to collect data and write out a file. This is scalable
       ! to a moderate number of processes, limited by memory on process 0.
       if (myid.eq.0) then
-
-        do ii=1,nx*ny,processchunk
-
-
+        ! send blocks to compute to all available process
+        do ii=1,uplimit
+          call MPI_SEND(ii,1,MPI_INTEGER,ii,0,MPI_COMM_WORLD,ierr)
         end do
-        do ii=mystart,myend
-          iy=1+floor((ii-1)/real(Nx))
-          ix=ii-(iy-1)*Nx
-          MSet(ix,iy)=myMSet(ix+Nx*(iy-1))
-        end do
-
-        if (numprocs.gt.1) then
-          do proc=1,numprocs-1
-            procstart=1+floor(proc*Nx*Ny/real(numprocs))
-            procend=min(floor((proc+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
-            itemcount=1+procend-procstart
-            call MPI_RECV(myMSet,itemcount,MPI_INTEGER,proc,proc, &
+        if (chunks .ge. numprocs) then
+          do ii=numprocs,chunks
+            ! get processed block
+            call MPI_RECV(myMSet,processchunk+3,MPI_INTEGER,MPI_ANY_SOURCE,MPI_ANY_TAG, &
                           MPI_COMM_WORLD,mpistat,ierr)
             ! copy data into main array
-            do ii=procstart,procend
-              iy=1+floor((ii-1)/real(Nx))
-              ix=ii-(iy-1)*Nx
-              MSet(ix,iy)=myMSet(mystart+ix+Nx*(iy-1)-procstart)
+            procstart=myMSet(processchunk+1)
+            procend=myMset(processchunk+2)
+            processnum=myMset(processchunk+3)
+            do iii=procstart,procend
+              iy=1+floor((iii-1.0d0)/(Nx*1.0d0))
+              ix=iii-(iy-1)*Nx
+              MSet(ix,iy)=myMSet(1+ix+Nx*(iy-1)-procstart)
+            end do
+            ! send next block to be processed
+            call MPI_SEND(ii,1,MPI_INTEGER,processnum,0,MPI_COMM_WORLD,ierr)
+          end do
+          ! get last processed block
+          call MPI_RECV(myMSet,processchunk+3,MPI_INTEGER,MPI_ANY_SOURCE,MPI_ANY_TAG, &
+                          MPI_COMM_WORLD,mpistat,ierr)
+          ! copy data into main array
+          procstart=myMSet(processchunk+1)
+          procend=myMset(processchunk+2)
+          processnum=myMset(processchunk+3)
+          do ii=procstart,procend
+            iy=1+floor((ii-1.0d0)/(Nx*1.0d0))
+            ix=ii-(iy-1)*Nx
+            MSet(ix,iy)=myMSet(1+ix+Nx*(iy-1)-procstart)
+          end do
+        else
+          do ii=1,uplimit
+            ! get processed block
+            call MPI_RECV(myMSet,processchunk+3,MPI_INTEGER,MPI_ANY_SOURCE,MPI_ANY_TAG, &
+                          MPI_COMM_WORLD,mpistat,ierr)
+            ! copy data into main array
+            procstart=myMSet(processchunk+1)
+            procend=myMset(processchunk+2)
+            processnum=myMset(processchunk+3)
+            do iii=procstart,procend
+              iy=1+floor((iii-1.0d0)/(Nx*1.0d0))
+              ix=iii-(iy-1)*Nx
+              MSet(ix,iy)=myMSet(1+ix+Nx*(iy-1)-procstart)
             end do
           end do
         end if
+
+        ! get other processes to exit loop
+        do ii=1,uplimit
+          chunknum=chunks+1
+          call MPI_SEND(chunknum,1,MPI_INTEGER,ii,0,MPI_COMM_WORLD,ierr)
+        end do
+
+
       else
-         ! other processes send data to process 0
-         itemcount=1+myend-mystart
-         call MPI_SEND(myMSet,itemcount,MPI_INTEGER,0,myid,MPI_COMM_WORLD,ierr)
+        ! processes other than 0 get block to compute, compute, send information to process 0
+        ! provided they do not get the signal to exit the loop
+        stopcompute = .false.
+        do while ((stopcompute .eqv. .false.).and. (myid .le. uplimit))
+          call MPI_RECV(chunknum,1,MPI_INTEGER,0,MPI_ANY_TAG, &
+                         MPI_COMM_WORLD,mpistat,ierr) 
+          if ( chunknum .eq. (chunks+1) ) then
+            stopcompute = .true.
+          else
+            mystart=1+(chunknum-1)*processchunk
+            myend=min(chunknum*processchunk,Nx*Ny)
+            call calcset(nx,ny,mystart,myend,processchunk,xmax,xmin,ymax,ymin,myMSet)
+            myMSet(processchunk+1)=mystart
+            myMSet(processchunk+2)=myend
+            myMSet(processchunk+3)=myid
+            call MPI_SEND(myMSet,processchunk+3,MPI_INTEGER,0,myid,MPI_COMM_WORLD,ierr)
+          end if
+        end do
       end if
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       if (myid.eq.0) then
-        print *,"Mandelbrot set collected on one process"
-      end if
-
-      if (myid.eq.0) then
+        print *,"Mandelbrot set calculated and collected on one process"
         ! Call Burkardt's Fortran code to write Mandelbrot picture to disk
-        call pgma_write ( file_name, nx, ny, Mset, ierror )
+        call pgma_write ( file_name, nx, ny, Mset, ierr )
         print *,"Saved image file to disk"
       end if
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -203,23 +244,24 @@ subroutine calcset(nx,ny,mystart,myend,processchunk,xmax,xmin,ymax,ymin,myMSet)
       ! This region is VERY easily parallelized because there is NO data shared
       ! between the loop iterations.
 
-
       use omp_lib
       implicit none
 
-      integer(kind=4), intent(in) :: nx, ny, maxiter, mystart, myend 
+      integer(kind=4), intent(in) :: nx, ny, mystart, myend 
       integer(kind=4), intent(in) :: processchunk 
-      real(kind=8), intent(in) :: xmax, xmin, ymax, ymin
-      integer(kind=8), intent(out), dimension(1:processchunk) :: myMset
+      integer(kind=4), intent(in) :: xmax, xmin, ymax, ymin
+      integer(kind=4), intent(out), dimension(1:processchunk+3) :: myMset
       real(kind=8) :: threshold = 1
       real(kind=8) :: dist = 0
-      integer(kind=4) :: ix, iy, ii, proc
+      integer(kind=4) :: ix, iy, ii
       real(kind=8) :: cx, cy
-      integer(kind=4) :: iter, i, ierror, allocatestatus
+      integer(kind=4) :: iter, i
       real(kind=8) :: x,y,x2,y2
       real(kind=8) :: temp = 0.0
       real(kind=8) :: xder = 0.0
       real(kind=8) :: yder = 0.0
+      ! Maximum number of iterations
+      integer(kind=4), parameter :: maxiter = 2000
       real(kind=8), dimension(1:maxiter) :: xorbit
       real(kind=8), dimension(1:maxiter) :: yorbit
       integer(kind=4), parameter :: hugenum = 100000
@@ -228,15 +270,16 @@ subroutine calcset(nx,ny,mystart,myend,processchunk,xmax,xmin,ymax,ymin,myMSet)
       real(kind=8) :: delta 
       ! chunk size for dynamic scheduling of shared memory loop
       integer(kind=4), parameter :: chunk = 1 
-
+      delta = (threshold*(xmax-xmin))/real(nx-1)
+      
       !$OMP PARALLEL DO &
       !$OMP PRIVATE(ii,ix,iy,cx,cy,iter,i,x,y,x2,y2) &
       !$OMP PRIVATE(temp,xder,yder,dist,xorbit,yorbit,flag) &
       !$OMP ORDERED SHARED(myMSet) SCHEDULE(DYNAMIC,chunk)
       do ii=mystart,myend
-        iy=1+floor((ii-1)/real(nx))
+        iy=1+floor((ii-1.0d0)/(nx*1.0d0))
         ix=ii-(iy-1)*nx
-        cy = ymin+(iy-1)*(ymax-ymin)/real(ny-1) 
+        cy = ymin+(iy-1.0d0)*(ymax-ymin)/(ny-1.0d0) 
         iter = 0
         i = 0
         x = 0
@@ -247,7 +290,7 @@ subroutine calcset(nx,ny,mystart,myend,processchunk,xmax,xmin,ymax,ymin,myMSet)
         xder = 0
         yder = 0
         dist = 0
-        cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
+        cx = xmin + (ix-1.0d0)*(xmax-xmin)/(nx-1.0d0) 
         ! This is the main loop that determins whether or not the point escapes
         ! or not. It breaks out of the loop when it escapes
         do iter = 0,maxiter-1
@@ -420,7 +463,7 @@ subroutine pgma_write ( file_out_name, row_num, col_num, g, ierror )
 
   integer ( kind = 4 ), intent(in) :: col_num
   integer ( kind = 4 ), intent(in) :: row_num
-  character ( len = * ), intent(in) ::  file_out_name
+  character ( len = * ), intent(in) :: file_out_name
   integer ( kind = 4 ), dimension(1:row_num,1:col_num), intent(in) :: g
   logical, parameter :: debug = .false.
   integer ( kind = 4 ) file_out_unit
@@ -519,7 +562,7 @@ subroutine pgma_write_data ( file_out_unit, row_num, col_num, g, ierror )
 
   integer ( kind = 4 ), intent(in) :: col_num
   integer ( kind = 4 ), intent(in) :: row_num
-  integer ( kind = 4 ), dimension(1:row_num,1:col_num), intent(in) ::  g
+  integer ( kind = 4 ), dimension(1:row_num,1:col_num), intent(in) :: g
   integer ( kind = 4 ), intent(in) :: file_out_unit
   integer ( kind = 4 ), intent(out) :: ierror
   integer ( kind = 4 ) i

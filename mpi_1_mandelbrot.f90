@@ -82,8 +82,8 @@ program Mandelbrot
       implicit none
 
       ! x and y resolution
-      integer(kind=4), parameter :: nx = 1000
-      integer(kind=4), parameter :: ny = 1000
+      integer(kind=4), parameter :: nx = 100
+      integer(kind=4), parameter :: ny = 100
       ! Maximum number of iterations
       integer(kind=4), parameter :: maxiter = 2000
       ! Use a two dimensional array to hold data for the global image
@@ -120,7 +120,7 @@ program Mandelbrot
       integer(kind=4) :: ierr, myid, numprocs, mystart, myend
       integer(kind=4) :: itemcount, procstart, procend
       integer(kind=4) :: mpistat(MPI_STATUS_SIZE) 
-      delta = (threshold*(xmax-xmin))/real(nx-1)
+      delta = (threshold*(xmax-xmin))/(nx-1.0d0)
       ! initialisation of MPI
       call MPI_INIT(ierr)
       call MPI_COMM_SIZE(MPI_COMM_WORLD, numprocs, ierr)
@@ -128,8 +128,8 @@ program Mandelbrot
       if (myid.eq.0) then
         print *,"Program to calculate Mandelbrot set started"
       end if
-      mystart=1+floor(myid*Nx*Ny/real(numprocs))
-      myend=min(floor((myid+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+      mystart=1+floor(myid*Nx*Ny/(1.0d0*numprocs))
+      myend=min(floor((myid+1.0d0)*Nx*Ny/(1.0d0*numprocs)),Nx*Ny)
       allocate(MSet(1:nx,1:ny),myMSet(mystart:myend),stat=allocatestatus)
       if (allocatestatus .ne. 0) stop
       MSet(1:nx,1:ny)=0
@@ -161,9 +161,9 @@ program Mandelbrot
       !$OMP PRIVATE(temp,xder,yder,dist,xorbit,yorbit,flag) &
       !$OMP ORDERED SHARED(myMSet) SCHEDULE(DYNAMIC,chunk)
       do ii=mystart,myend
-        iy=1+floor((ii-1)/real(Nx))
+        iy=1+floor((ii-1.0d0)/(Nx*1.0d0))
         ix=ii-(iy-1)*Nx
-        cy = ymin+(iy-1)*(ymax-ymin)/real(ny-1) 
+        cy = ymin+(iy-1.0d0)*(ymax-ymin)/(ny-1.0d0) 
         iter = 0
         i = 0
         x = 0
@@ -174,7 +174,7 @@ program Mandelbrot
         xder = 0
         yder = 0
         dist = 0
-        cx = xmin + (ix-1)*(xmax-xmin)/real(nx-1) 
+        cx = xmin + (ix-1.0d0)*(xmax-xmin)/(nx-1.0d0) 
         ! This is the main loop that determins whether or not the point escapes
         ! or not. It breaks out of the loop when it escapes
         do iter = 0,maxiter-1
@@ -229,22 +229,25 @@ program Mandelbrot
       ! to a moderate number of processes, limited by memory on process 0.
       if (myid.eq.0) then
         do ii=mystart,myend
-          iy=1+floor((ii-1)/real(Nx))
+          iy=1+floor((ii-1.0d0)/(Nx*1.0d0))
           ix=ii-(iy-1)*Nx
           MSet(ix,iy)=myMSet(ix+Nx*(iy-1))
         end do
 
         if (numprocs.gt.1) then
           do proc=1,numprocs-1
-            procstart=1+floor(proc*Nx*Ny/real(numprocs))
-            procend=min(floor((proc+1.0d0)*Nx*Ny/real(numprocs)),Nx*Ny)
+            procstart=1+floor((proc*Nx*Ny*1.0d0)/(numprocs*1.0d0))
+            procend=min(floor(((proc+1.0d0)*Nx*Ny)/(numprocs*1.0d0)),Nx*Ny)
             itemcount=1+procend-procstart
             call MPI_RECV(myMSet,itemcount,MPI_INTEGER,proc,proc, &
                           MPI_COMM_WORLD,mpistat,ierr)
             ! copy data into main array
             do ii=procstart,procend
-              iy=1+floor((ii-1)/real(Nx))
+              iy=1+floor((ii-1.0d0)/(Nx*1.0d0))
               ix=ii-(iy-1)*Nx
+              if (ix.eq.0) then
+                print *,procstart,procend,myid
+              endif
               MSet(ix,iy)=myMSet(mystart+ix+Nx*(iy-1)-procstart)
             end do
           end do
